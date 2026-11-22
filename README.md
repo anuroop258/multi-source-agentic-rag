@@ -91,13 +91,13 @@ The local Windows app remains the original FastAPI + LangGraph + ChromaDB stack.
 
 Cloud deployment layout:
 
-- **Cloudflare Pages** serves the React/Vite frontend and protects the entire site (including APIs) with HTTP Basic Auth.
+- **Cloudflare Pages** serves the React/Vite frontend and public Pages Functions API. No website login is required; browser-originated write requests retain a same-origin check.
 - **Pages Functions** implement `/api/*` directly in JavaScript; there is no separate FastAPI/Python service to run.
 - **Cloudflare D1** stores conversation history and document metadata.
 - **Cloudflare AI Search built-in storage** stores uploaded documents and provides hybrid semantic/keyword retrieval and optional reranking.
 - **Groq** remains the answer-generation provider. DuckDuckGo is the default web search; Tavily and Groq browser search are optional.
 
-Follow [`CLOUDFLARE_DEPLOYMENT.md`](CLOUDFLARE_DEPLOYMENT.md) for exact Windows PowerShell setup, D1 migration, AI Search instance creation, secrets and smoke tests. Do not deploy until you have reviewed its security and usage-limit notes.
+Follow [`CLOUDFLARE_DEPLOYMENT.md`](CLOUDFLARE_DEPLOYMENT.md) for exact Windows PowerShell setup, D1 migration, AI Search instance creation, secrets and smoke tests. The hosted Pages app is intentionally public: anyone can use its chat and document endpoints, upload or delete indexed documents, and consume configured Groq/AI Search quota. Do not upload private or sensitive documents, and review usage limits before sharing the URL.
 
 **Cloud adapter differences:** cloud document retrieval is managed by Cloudflare AI Search rather than local ChromaDB + Sentence Transformers + BM25 + CrossEncoder. The local LangGraph graph and optional stock lookup are not deployed in Pages; the cloud API uses a bounded Groq tool-calling loop for supported research tools. Treat the Pages build as a constrained hosted demo until upload, retrieval and chat have been tested against your own account and sample documents. The Cloudflare Free plan currently has a 10 ms CPU limit per request; AI Search also has included monthly usage caps and usage-based overages. AI Search usage-based billing is scheduled to begin December 1, 2026. Check current account limits and spending controls before enabling uploads.
 

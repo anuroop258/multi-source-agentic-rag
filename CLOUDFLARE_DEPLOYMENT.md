@@ -8,7 +8,7 @@ This guide follows the repository-root Pages + Pages Functions + D1 pattern used
 Browser
   |
   v
-Cloudflare Pages (React/Vite static assets + Basic Auth)
+Cloudflare Pages (React/Vite static assets + public Pages API)
   |
   +-- Pages Functions: /api/*
           |
@@ -145,8 +145,6 @@ Open Pages project → **Settings → Variables and Secrets**. Add these to the 
 
 | Name | Type | Value |
 |---|---|---|
-| `APP_USERNAME` | Secret | Your chosen login name |
-| `APP_PASSWORD` | Secret | A long, unique password (20+ characters recommended) |
 | `GROQ_API_KEY` | Secret | Your Groq API key |
 | `CLOUDFLARE_ACCOUNT_ID` | Secret | Your Cloudflare account ID |
 | `CLOUDFLARE_AI_SEARCH_TOKEN` | Secret | The AI Search:Edit + AI Search:Run token |
@@ -160,28 +158,16 @@ Save the values and trigger a new deployment so the runtime receives the D1 bind
 
 ## 9. Verify the live deployment
 
-Use the `*.pages.dev` URL shown on the Pages project. The `/healthz` endpoint is intentionally public and checks D1 only. The rest of the site and API require the Basic Auth username/password.
+Use the `*.pages.dev` URL shown on the Pages project. The whole site and API are intentionally public and do not require a login. `/healthz` checks D1 only. The Pages middleware retains a same-origin check for browser-initiated write requests; this is a CSRF mitigation, not authentication.
 
-From PowerShell, set your URL and credentials:
+From PowerShell, set the public site URL. No username, password, or Authorization header is required:
 
 ```powershell
 $base = "https://YOUR-PROJECT.pages.dev"
-$username = Read-Host "Pages username"
-$securePassword = Read-Host "Pages password" -AsSecureString
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-try { $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-$basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$username`:$password"))
-$headers = @{ Authorization = "Basic $basic" }
-```
-
-Health and read APIs:
-
-```powershell
 Invoke-RestMethod "$base/healthz"
-Invoke-RestMethod "$base/api/status" -Headers $headers | ConvertTo-Json -Depth 6
-Invoke-RestMethod "$base/api/documents" -Headers $headers | ConvertTo-Json -Depth 6
-Invoke-RestMethod "$base/api/conversations" -Headers $headers | ConvertTo-Json -Depth 6
+Invoke-RestMethod "$base/api/status" | ConvertTo-Json -Depth 6
+Invoke-RestMethod "$base/api/documents" | ConvertTo-Json -Depth 6
+Invoke-RestMethod "$base/api/conversations" | ConvertTo-Json -Depth 6
 ```
 
 Expected gates:
@@ -210,8 +196,8 @@ The cloud adapter is intentionally narrower than the local app:
 - Cloud document retrieval uses AI Search hybrid retrieval and optional reranking, not local ChromaDB + Sentence Transformers + BM25 + CrossEncoder.
 - The hosted cloud chat has a bounded Groq tool loop. The local LangGraph graph and optional Yahoo Finance stock lookup are not deployed here.
 - Supported cloud uploads are PDF, DOCX, TXT, Markdown, RST and CSV. Markdown is sent as plain text with the original file name retained as metadata. This deployment caps every file at 4 MB, even though AI Search allows larger plain-text files.
-- The frontend/API uses one shared Basic Auth login. This is suitable for a personal demo, not multi-user account management or fine-grained per-user access.
-- The `/healthz` route is public and exposes only basic service/database health. All other pages and API routes are protected by Basic Auth.
+- The hosted frontend and API are public; no login or HTTP Basic Auth is used. The same-origin check on browser write requests is only a CSRF mitigation and does not authenticate callers.
+- Anyone who can reach the site can read conversation history and document metadata, upload documents, delete documents/conversations, and trigger Groq/AI Search requests. Keep private files off this public instance and monitor provider usage. Do not share the URL until you accept these consequences.
 
 ## 11. Free-tier and billing warning
 
@@ -235,7 +221,7 @@ Do not enable paid Groq/Tavily options unless you have checked the provider's cu
 | Upload is rejected | Check file extension, filename length and the 4 MB application limit. |
 | Index stays queued/running | Inspect the AI Search instance Items page and indexing logs. |
 | Chat says Groq key missing or Groq HTTP error | Verify `GROQ_API_KEY`, model name and account quota. |
-| `/api/status` returns 401 | Expected without the Pages Basic Auth credentials; do not remove authentication to make the test pass. |
+| Browser still shows an authentication prompt | Confirm the latest deployment includes the no-login middleware patch; close the old browser tab or test in a private window to clear cached HTTP Basic Auth credentials. |
 | Worker CPU limit error | Inspect Pages Function logs; AI Search calls should handle retrieval remotely, not local model inference. |
 
 ## 13. Rollback

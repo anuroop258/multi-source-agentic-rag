@@ -238,9 +238,38 @@ async function runTool(env, name, args, provider) {
 async function groqCompletion(env, messages, useTools = true, browserSearch = false) {
   const key = envText(env, "GROQ_API_KEY");
   if (!key) throw new Error("GROQ_API_KEY is not configured in Cloudflare Pages secrets.");
-  const payload = { model: envText(env, "GROQ_MODEL", MODEL_DEFAULT), messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages], max_completion_tokens: 2200, reasoning_effort: "low", stream: false };
-  if (useTools) { payload.tools = [...TOOL_DEFS]; if (browserSearch) payload.tools.push({ type: "browser_search" }); payload.tool_choice = "auto"; }
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(70000) });
+
+  // GPT-OSS 120B supports tool use but not parallel tool calls. Groq also
+  // requires hidden/parsed reasoning format when tool calling is enabled.
+  const payload = {
+    model: envText(env, "GROQ_MODEL", MODEL_DEFAULT),
+    messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+    max_completion_tokens: 2200,
+    reasoning_effort: "low",
+    reasoning_format: "hidden",
+    parallel_tool_calls: false,
+    temperature: 0.2,
+    stream: false,
+  };
+
+  if (useTools) {
+    if (browserSearch) {
+      // Groq's built-in browser search is a server-side tool and returns the
+      // synthesized answer directly. Keep it separate from local function tools.
+      payload.tools = [{ type: "browser_search" }];
+      payload.tool_choice = "required";
+    } else {
+      payload.tools = [...TOOL_DEFS];
+      payload.tool_choice = "auto";
+    }
+  }
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(70000),
+  });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Groq API returned HTTP ${response.status}: ${JSON.stringify(body.error || body).slice(0, 700)}`);
   if (!body.choices?.length) throw new Error("Groq returned no completion choices.");

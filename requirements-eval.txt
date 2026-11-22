@@ -1,0 +1,5 @@
+-r requirements.txt
+ragas>=0.2.15,<0.3
+datasets>=3,<4
+langchain-groq>=0.2,<1
+langchain-huggingface>=0.1,<1

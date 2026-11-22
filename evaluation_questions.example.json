@@ -1,0 +1,10 @@
+[
+  {
+    "question": "What are the main topics covered in the uploaded document?",
+    "ground_truth": "Write a reference answer supported by the document."
+  },
+  {
+    "question": "List one specific fact stated in the uploaded document.",
+    "ground_truth": "Write the exact expected fact from the document."
+  }
+]

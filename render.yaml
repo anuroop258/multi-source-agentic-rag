@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: multi-source-agentic-rag
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: SEARCH_PROVIDER
+        value: duckduckgo
+      - key: DDGS_REGION
+        value: in-en
+      - key: TAVILY_ENABLED
+        value: "false"
+      - key: GROQ_BROWSER_SEARCH_ENABLED
+        value: "false"
+      - key: LANGSMITH_TRACING
+        value: "false"
+      - key: DATA_DIR
+        value: /app/data
+      - key: CHROMA_DIR
+        value: /app/data/chroma
+      - key: SQLITE_PATH
+        value: /app/data/conversations.sqlite3

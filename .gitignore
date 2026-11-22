@@ -1,0 +1,26 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+data/*
+!data/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
+
+# Frontend
+frontend/node_modules/
+
+# Local databases, model caches, secrets and deployment artifacts
+*.sqlite
+*.sqlite3
+*.db
+*.log
+.env.*
+!.env.example
+.DS_Store
+.cache/
+.huggingface/
+.pytest_cache/

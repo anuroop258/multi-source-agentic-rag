@@ -134,24 +134,188 @@ function decodeHtml(value) {
 function plainText(html) {
   return decodeHtml(String(html).replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg)[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<\/(p|div|li|h[1-6]|tr|section|article)>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/[ \t]+/g, " ").replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n")).trim();
 }
-async function webSearch(query, provider, env) {
-  const tavilyKey = envText(env, "TAVILY_API_KEY");
-  if (provider === "tavily" && tavilyKey) {
-    const response = await fetch("https://api.tavily.com/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: tavilyKey, query, search_depth: "basic", max_results: 6, include_answer: false, include_raw_content: false }), signal: AbortSignal.timeout(20000) });
-    if (!response.ok) throw new Error(`Tavily returned HTTP ${response.status}.`);
-    const rows = (await response.json()).results || [];
-    return rows.length ? rows.map((r, i) => `${i + 1}. ${r.title || "Untitled"}\nURL: ${r.url || ""}\nSnippet: ${r.content || ""}`).join("\n\n") : "Tavily returned no results.";
+function searchAttr(attrs, name) {
+  const match = String(attrs || '').match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i'));
+  return match ? decodeHtml(match[1]) : '';
+}
+function normalizeSearchHref(raw, baseUrl) {
+  let href = decodeHtml(String(raw || '').trim());
+  if (!href) return '';
+  try {
+    let parsed = new URL(href, baseUrl);
+    const redirect = parsed.searchParams.get('uddg');
+    if (redirect) parsed = new URL(redirect);
+    if (parsed.hostname === 'bing.com' || parsed.hostname === 'www.bing.com') {
+      const wrapped = parsed.searchParams.get('u') || '';
+      if (wrapped.startsWith('a1')) {
+        try {
+          const encoded = wrapped.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+          const padded = encoded + '='.repeat((4 - encoded.length % 4) % 4);
+          const bytes = Uint8Array.from(atob(padded), ch => ch.charCodeAt(0));
+          const decoded = new TextDecoder().decode(bytes);
+          if (/^https?:\/\//i.test(decoded)) parsed = new URL(decoded);
+        } catch { /* keep the Bing URL if its wrapper cannot be decoded */ }
+      }
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    if (/^(?:www\.)?(?:duckduckgo\.com|html\.duckduckgo\.com|lite\.duckduckgo\.com)$/i.test(parsed.hostname)) return '';
+    return parsed.toString();
+  } catch { return ''; }
+}
+function parseDdgResults(html, baseUrl, className) {
+  const anchors = [...String(html || '').matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)];
+  const primary = anchors.filter(match => new RegExp(`(?:^|\\s)${className}(?:\\s|$)`, 'i').test(searchAttr(match[1], 'class')));
+  const candidates = primary.length ? primary : anchors.filter(match => /[?&]uddg=/.test(searchAttr(match[1], 'href')));
+  const hits = [];
+  for (let i = 0; i < candidates.length && hits.length < 6; i += 1) {
+    const match = candidates[i];
+    const url = normalizeSearchHref(searchAttr(match[1], 'href'), baseUrl);
+    const title = plainText(match[2]);
+    if (!url || title.length < 3 || title.length > 240) continue;
+    const nextIndex = candidates[i + 1]?.index ?? Number.MAX_SAFE_INTEGER;
+    const segment = String(html).slice(match.index + match[0].length, nextIndex);
+    const snippetMatch = segment.match(/<(?:div|span|a)[^>]*class=["'][^"']*(?:result__snippet|result-snippet)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|a)>/i);
+    const snippet = snippetMatch ? plainText(snippetMatch[1]).slice(0, 700) : '';
+    if (!hits.some(hit => hit.url === url)) hits.push({ title, url, snippet, engine: 'DuckDuckGo' });
   }
-  const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { headers: { "User-Agent": "Mozilla/5.0 MultiSourceAgenticRAG/1.0" }, signal: AbortSignal.timeout(15000) });
-  if (!response.ok) throw new Error(`DuckDuckGo returned HTTP ${response.status}.`);
-  const html = await response.text();
-  const matches = [...html.matchAll(/<a[^>]+class=["'][^"']*(?:result__a|result-link)[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].slice(0, 6);
-  if (!matches.length) return "DuckDuckGo returned no parseable results. Try another query or provide a URL.";
-  return matches.map((m, i) => {
-    let href = decodeHtml(m[1]);
-    try { const u = new URL(href, "https://duckduckgo.com"); const real = u.searchParams.get("uddg"); if (real) href = real; } catch { /* keep original */ }
-    return `${i + 1}. ${plainText(m[2])}\nURL: ${href}`;
-  }).join("\n\n");
+  return hits;
+}
+function parseBingResults(html) {
+  const blocks = String(html || '').split(/<li\b[^>]*class=["'][^"']*\bb_algo\b[^"']*["'][^>]*>/i).slice(1);
+  const hits = [];
+  for (const block of blocks) {
+    const heading = block.match(/<h2\b[^>]*>[\s\S]*?<a\b([^>]*)>([\s\S]*?)<\/a>[\s\S]*?<\/h2>/i);
+    if (!heading) continue;
+    const url = normalizeSearchHref(searchAttr(heading[1], 'href'), 'https://www.bing.com/');
+    const title = plainText(heading[2]);
+    if (!url || title.length < 3) continue;
+    const snippetMatch = block.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
+    const snippet = snippetMatch ? plainText(snippetMatch[1]).slice(0, 700) : '';
+    hits.push({ title, url, snippet, engine: 'Bing' });
+    if (hits.length >= 6) break;
+  }
+  return hits;
+}
+function extractXmlValue(block, tag) {
+  const match = String(block || '').match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return match ? decodeHtml(match[1].replace(/^<!\[CDATA\[|\]\]>$/g, '').trim()) : '';
+}
+function isRecentNewsQuery(query) {
+  return /\b(latest|recent|today|this week|past week|last 7 days|news|developments|releases|announcements)\b/i.test(query);
+}
+async function requestSearchPage(url, init = {}, timeoutMs = 10000) {
+  const response = await fetch(url, {
+    ...init,
+    redirect: 'follow',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      ...(init.headers || {}),
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return { status: response.status, text: await response.text() };
+}
+async function searchDdg(query, endpoint, env) {
+  // Match the source ZIP default (DDGS_REGION=in-en) unless Pages overrides it.
+  const region = envText(env, 'DDGS_REGION', 'in-en');
+  const body = new URLSearchParams({ q: query, kl: region, ...(endpoint === 'html' ? { b: '' } : {}) }).toString();
+  const base = endpoint === 'lite' ? 'https://lite.duckduckgo.com/lite/' : 'https://html.duckduckgo.com/html/';
+  const result = await requestSearchPage(base, {
+    method: 'POST',
+    body,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  }, 10000);
+  if (result.status === 202 || result.status === 429 || /anomaly\.js|challenge-form|unusual traffic/i.test(result.text)) {
+    return { hits: [], note: `${endpoint === 'lite' ? 'DuckDuckGo Lite' : 'DuckDuckGo HTML'} returned an anti-bot challenge (HTTP ${result.status}).` };
+  }
+  if (result.status >= 400) return { hits: [], note: `DuckDuckGo ${endpoint} returned HTTP ${result.status}.` };
+  const hits = parseDdgResults(result.text, base, endpoint === 'lite' ? 'result-link' : 'result__a');
+  return { hits, note: hits.length ? '' : `DuckDuckGo ${endpoint} returned no parseable result links (HTTP ${result.status}).` };
+}
+async function searchBing(query) {
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&form=QBRE&qs=n&sp=-1`;
+  const result = await requestSearchPage(url, { method: 'GET' }, 10000);
+  if (result.status >= 400) return { hits: [], note: `Bing returned HTTP ${result.status}.` };
+  const hits = parseBingResults(result.text);
+  return { hits, note: hits.length ? '' : `Bing returned no parseable result links (HTTP ${result.status}).` };
+}
+async function searchGoogleNewsRss(query) {
+  const feedQuery = /\b(when:\d+[hdwmy])\b/i.test(query) || !/\b(this week|past week|last 7 days)\b/i.test(query)
+    ? query
+    : `${query} when:7d`;
+  const params = new URLSearchParams({ q: feedQuery, hl: 'en-US', gl: 'US', ceid: 'US:en' });
+  const result = await requestSearchPage(`https://news.google.com/rss/search?${params.toString()}`, { method: 'GET' }, 9000);
+  if (result.status >= 400) return { hits: [], note: `Google News RSS returned HTTP ${result.status}.` };
+  const items = [...result.text.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].slice(0, 6);
+  const hits = [];
+  for (const item of items) {
+    const block = item[1];
+    const title = plainText(extractXmlValue(block, 'title'));
+    const url = normalizeSearchHref(extractXmlValue(block, 'link'), 'https://news.google.com/');
+    const source = plainText(extractXmlValue(block, 'source'));
+    const published = plainText(extractXmlValue(block, 'pubDate'));
+    const description = plainText(extractXmlValue(block, 'description'));
+    if (!title || !url) continue;
+    const snippet = [source ? `Source: ${source}` : '', published ? `Published: ${published}` : '', description].filter(Boolean).join(' | ').slice(0, 700);
+    hits.push({ title, url, snippet, engine: 'Google News RSS' });
+  }
+  return { hits, note: hits.length ? '' : `Google News RSS returned no parseable items (HTTP ${result.status}).` };
+}
+function formatSearchResults(hits) {
+  return hits.slice(0, 6).map((hit, index) => `${index + 1}. ${hit.title}\nURL: ${hit.url}${hit.engine ? `\nSearch engine: ${hit.engine}` : ''}${hit.snippet ? `\nSnippet: ${hit.snippet}` : ''}`).join('\n\n');
+}
+async function webSearch(query, provider, env) {
+  const searchQuery = String(query || '').trim().slice(0, 500);
+  if (!searchQuery) throw new Error('Search query is empty.');
+  const notes = [];
+  const tavilyKey = envText(env, 'TAVILY_API_KEY');
+
+  if (provider === 'tavily' && tavilyKey) {
+    try {
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: tavilyKey, query: searchQuery, search_depth: 'basic', max_results: 6, include_answer: false, include_raw_content: false }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) notes.push(`Tavily returned HTTP ${response.status}.`);
+      else {
+        const rows = (await response.json()).results || [];
+        const hits = rows.filter(row => row.url).map(row => ({ title: row.title || 'Untitled', url: row.url, snippet: row.content || '', engine: 'Tavily' }));
+        if (hits.length) return `Search provider: Tavily\n\n${formatSearchResults(hits)}`;
+        notes.push('Tavily returned no usable results.');
+      }
+    } catch (error) { notes.push(`Tavily error: ${String(error.message || error).slice(0, 180)}.`); }
+  }
+
+  // DuckDuckGo's no-JS HTML endpoints commonly serve empty/challenge pages to
+  // simple GET requests. Submit the documented search form as POST instead.
+  for (const endpoint of ['html', 'lite']) {
+    try {
+      const result = await searchDdg(searchQuery, endpoint, env);
+      if (result.hits.length) return `Search provider: DuckDuckGo (${endpoint})\n\n${formatSearchResults(result.hits)}`;
+      if (result.note) notes.push(result.note);
+    } catch (error) { notes.push(`DuckDuckGo ${endpoint} error: ${String(error.message || error).slice(0, 180)}.`); }
+  }
+
+  // Bing is a no-key fallback when DuckDuckGo blocks the Cloudflare egress IP.
+  try {
+    const result = await searchBing(searchQuery);
+    if (result.hits.length) return `Search provider: Bing (fallback)\n\n${formatSearchResults(result.hits)}`;
+    if (result.note) notes.push(result.note);
+  } catch (error) { notes.push(`Bing error: ${String(error.message || error).slice(0, 180)}.`); }
+
+  // For time-sensitive research, also query the Google News RSS search feed.
+  if (isRecentNewsQuery(searchQuery)) {
+    try {
+      const result = await searchGoogleNewsRss(searchQuery);
+      if (result.hits.length) return `Search provider: Google News RSS (recent-news fallback; feed links may redirect through Google News)\n\n${formatSearchResults(result.hits)}`;
+      if (result.note) notes.push(result.note);
+    } catch (error) { notes.push(`Google News RSS error: ${String(error.message || error).slice(0, 180)}.`); }
+  }
+
+  return `No usable web-search results were returned for: ${searchQuery}\n\nProvider diagnostics:\n- ${notes.join('\n- ') || 'All configured search providers returned empty results.'}\n\nNo source material was retrieved; do not infer or invent current developments. Try again later or use a specific URL.`;
 }
 async function fetchPage(url) {
   const result = await safeFetch(url);

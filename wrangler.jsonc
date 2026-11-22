@@ -1,12 +1,16 @@
 ﻿{
-	"name": "multi-source-agentic-rag",
-	"pages_build_output_dir": "./frontend/dist",
-	"compatibility_date": "2026-11-22",
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "multi-source-agentic-rag-db",
-			"database_id": "b0d32771-9484-4d3b-a711-e6aa8b13c7e6"
-		}
-	]
+    "name":  "multi-source-agentic-rag",
+    "pages_build_output_dir":  "./frontend/dist",
+    "compatibility_date":  "2026-11-22",
+    "d1_databases":  [
+                         {
+                             "binding":  "DB",
+                             "database_name":  "multi-source-agentic-rag-db",
+                             "database_id":  "b0d32771-9484-4d3b-a711-e6aa8b13c7e6"
+                         }
+                     ],
+    "vars":  {
+                 "AI_SEARCH_INSTANCE_ID":  "multi-source-agentic-rag-kb",
+                 "GROQ_MODEL":  "openai/gpt-oss-120b"
+             }
 }

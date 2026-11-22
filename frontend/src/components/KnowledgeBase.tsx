@@ -20,7 +20,7 @@ export default function KnowledgeBase({ docs, chunks, onChanged }: Props) {
     try {
       const r = await api.upload(list);
       setNotes([
-        ...r.indexed.map((d) => ({ ok: true, text: `${d.name}: ${d.chunks} chunks indexed` })),
+        ...r.indexed.map((d) => ({ ok: true, text: `${d.name}: ${d.chunks ? `${d.chunks} chunks` : "upload accepted"} (${d.status ?? "indexing"})` })),
         ...r.rejected.map((d) => ({ ok: false, text: `${d.name}: ${d.reason}` })),
       ]);
       onChanged();
@@ -31,7 +31,7 @@ export default function KnowledgeBase({ docs, chunks, onChanged }: Props) {
 
   const remove = async (name: string) => { await api.deleteDocument(name); onChanged(); };
   const clear = async () => {
-    if (!confirm("Clear the whole document index? Uploaded files stay on disk.")) return;
+    if (!confirm("Clear the whole document index? Cloudflare AI Search files will be deleted.")) return;
     await api.clearIndex(); onChanged();
   };
 
@@ -49,16 +49,16 @@ export default function KnowledgeBase({ docs, chunks, onChanged }: Props) {
         onClick={() => !busy && input.current?.click()}
         className={`cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition ${drag ? "border-brand-500 bg-brand-50 dark:bg-brand-600/10" : "border-slate-300 hover:border-brand-400 dark:border-slate-700"}`}
       >
-        <input ref={input} type="file" hidden multiple accept=".pdf,.docx,.txt,.md,.csv" onChange={(e) => { if (e.target.files) upload(e.target.files); e.target.value = ""; }} />
+        <input ref={input} type="file" hidden multiple accept=".pdf,.docx,.txt,.md,.markdown,.rst,.csv" onChange={(e) => { if (e.target.files) upload(e.target.files); e.target.value = ""; }} />
         {busy ? (
           <div className="flex flex-col items-center gap-1 text-xs text-slate-500">
-            <Loader2 size={20} className="animate-spin text-brand-500" />Indexing… first run downloads models
+            <Loader2 size={20} className="animate-spin text-brand-500" />Uploading and indexing in the cloud…
           </div>
         ) : (
           <div className="flex flex-col items-center gap-1 text-xs text-slate-500">
             <UploadCloud size={20} className="text-slate-400" />
             <span><b className="text-slate-700 dark:text-slate-200">Drop files</b> or click</span>
-            <span className="text-[11px] text-slate-400">PDF · DOCX · TXT · MD · CSV</span>
+            <span className="text-[11px] text-slate-400">PDF · DOCX · TXT · MD · RST · CSV (max 4 MB each)</span>
           </div>
         )}
       </div>
@@ -81,7 +81,7 @@ export default function KnowledgeBase({ docs, chunks, onChanged }: Props) {
               <FileText size={15} className={d.indexed ? "text-brand-500" : "text-slate-400"} />
               <div className="min-w-0 flex-1">
                 <div className="truncate" title={d.name}>{d.name}</div>
-                <div className="text-[11px] text-slate-400">{d.indexed ? `${d.chunks} chunks` : "not indexed"}{d.size != null && ` · ${fmt(d.size)}`}</div>
+                <div className="text-[11px] text-slate-400">{d.indexed ? `${d.chunks} chunks` : (d.index_status || "not indexed")}{d.size != null && ` · ${fmt(d.size)}`}</div>
               </div>
               <button onClick={() => remove(d.name)} title="Delete" className="hidden rounded p-1 text-slate-400 hover:text-red-500 group-hover:block"><Trash2 size={14} /></button>
             </li>

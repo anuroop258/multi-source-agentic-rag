@@ -165,9 +165,9 @@ export default function App() {
           <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <span>
-              {serverDown ? "Can't reach the backend. Start it with `python run.py`."
-                : needsKey ? "GROQ_API_KEY is missing. Copy .env.example to .env, add your key, and restart the server."
-                : `Local retrieval setup failed: ${status?.retrieval_error}`}
+              {serverDown ? "Can't reach the cloud API. Check the Cloudflare Pages deployment and D1 binding."
+                : needsKey ? "GROQ_API_KEY is missing from Cloudflare Pages secrets. Add it in Pages Settings → Variables and Secrets, then redeploy."
+                : `Cloud retrieval setup failed: ${status?.retrieval_error}`}
             </span>
           </div>
         )}

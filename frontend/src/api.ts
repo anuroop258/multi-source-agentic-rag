@@ -16,7 +16,7 @@ export const api = {
     const fd = new FormData();
     files.forEach((f) => fd.append("files", f));
     return fetch("/api/documents", { method: "POST", body: fd }).then(
-      j<{ indexed: { name: string; chunks: number }[]; rejected: { name: string; reason: string }[] }>,
+      j<{ indexed: { name: string; chunks: number; status?: string }[]; rejected: { name: string; reason: string }[] }>,
     );
   },
   deleteDocument: (name: string) => fetch(`/api/documents/${encodeURIComponent(name)}`, { method: "DELETE" }).then(j),

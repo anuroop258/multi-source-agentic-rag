@@ -24,3 +24,10 @@ frontend/node_modules/
 .cache/
 .huggingface/
 .pytest_cache/
+
+# Cloudflare local build/runtime artifacts
+cloudflare/worker/.venv/
+cloudflare/worker/.wrangler/
+.wrangler/
+.dev.vars
+frontend/dist/

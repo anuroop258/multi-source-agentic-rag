@@ -85,18 +85,21 @@ npm run build    # rewrites frontend/dist
 
 Run the backend alongside with `python run.py --no-browser` (add `--reload` while editing Python).
 
-## Free cloud demo deployment (Render)
+## Cloudflare Pages deployment (free-tier target)
 
-This repository includes a Render Blueprint and Dockerfile for a no-card free-tier demo. The service builds the React frontend and serves it from the same FastAPI origin, so the existing relative `/api` requests and SSE stream continue to work without a separate frontend API URL.
+The local Windows app remains the original FastAPI + LangGraph + ChromaDB stack. The Cloudflare deployment is a separate Pages Functions adapter so the local application and its local retrieval behavior are not overwritten.
 
-1. Push this repository to GitHub (keep it private initially; make it public only after reviewing the source and `.env.example`).
-2. In Render, choose **New → Blueprint**, connect the repository, and apply `render.yaml`.
-3. Set `APP_USERNAME`, `APP_PASSWORD` and `GROQ_API_KEY` in the Render environment settings. Use a unique strong password; never commit these values. The app uses HTTP Basic Auth to protect the UI and every API route, while `/healthz` remains public for the platform health check.
-4. Deploy and verify `/healthz`, `/api/status`, `/api/docs`, document upload, retrieval and SSE chat.
+Cloud deployment layout:
 
-**Free-tier limitations:** Render free web services sleep after 15 minutes without inbound traffic and can take about a minute to wake. Their filesystem is ephemeral: uploaded documents, ChromaDB indexes and SQLite conversations are lost on restart, redeploy or spin-down. The free service also has a 512 MB RAM limit, so the local embedding/reranking stack may exceed available memory during first model load or indexing. This configuration is a demo/test deployment, not reliable persistent hosting. Do not upload confidential documents. For durable use, the project needs external persistent storage and more memory, which may incur cost.
+- **Cloudflare Pages** serves the React/Vite frontend and protects the entire site (including APIs) with HTTP Basic Auth.
+- **Pages Functions** implement `/api/*` directly in JavaScript; there is no separate FastAPI/Python service to run.
+- **Cloudflare D1** stores conversation history and document metadata.
+- **Cloudflare AI Search built-in storage** stores uploaded documents and provides hybrid semantic/keyword retrieval and optional reranking.
+- **Groq** remains the answer-generation provider. DuckDuckGo is the default web search; Tavily and Groq browser search are optional.
 
-The `/healthz` endpoint is intentionally lightweight and does not load ChromaDB or the ML models. A successful health check proves the web process is reachable; it does **not** prove model initialization, indexing or chat inference works.
+Follow [`CLOUDFLARE_DEPLOYMENT.md`](CLOUDFLARE_DEPLOYMENT.md) for exact Windows PowerShell setup, D1 migration, AI Search instance creation, secrets and smoke tests. Do not deploy until you have reviewed its security and usage-limit notes.
+
+**Cloud adapter differences:** cloud document retrieval is managed by Cloudflare AI Search rather than local ChromaDB + Sentence Transformers + BM25 + CrossEncoder. The local LangGraph graph and optional stock lookup are not deployed in Pages; the cloud API uses a bounded Groq tool-calling loop for supported research tools. Treat the Pages build as a constrained hosted demo until upload, retrieval and chat have been tested against your own account and sample documents. The Cloudflare Free plan currently has a 10 ms CPU limit per request; AI Search also has included monthly usage caps and usage-based overages. AI Search usage-based billing is scheduled to begin December 1, 2026. Check current account limits and spending controls before enabling uploads.
 
 ## Using the app
 

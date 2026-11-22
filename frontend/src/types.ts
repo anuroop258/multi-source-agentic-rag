@@ -27,13 +27,16 @@ export interface DocInfo {
   size: number | null;
   chunks: number;
   indexed: boolean;
+  index_status?: "queued" | "running" | "completed" | "error" | "skipped" | "outdated" | string;
 }
 
 export interface AppStatus {
   model: string;
   groq_configured: boolean;
   indexed_chunks: number;
+  indexed_documents?: number;
   retrieval_error: string | null;
+  cloud_storage: { provider: "cloudflare_ai_search" | string; configured: boolean };
   search: { default_provider: "duckduckgo" | "tavily"; tavily_available: boolean; browser_search_default: boolean };
 }
 
